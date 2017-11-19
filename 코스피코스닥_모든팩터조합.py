@@ -2,6 +2,11 @@
 """
 Created on Thu Aug 24 13:27:10 2017
 
+raw_data['sales_cap']=raw_data['SALES']/raw_data['MARKET_CAP']
+raw_data['gpro_cap']=raw_data['GROSS_PROFIT']/raw_data['MARKET_CAP']
+raw_data['opro_cap']=raw_data['OPE_PROFIT']/raw_data['MARKET_CAP'] # 이놈 시총제한 있고 없고 차이 심한데 
+얘네는 계절성때문에 제외
+
 @author: SH-NoteBook
 """
 
@@ -10,16 +15,18 @@ import pandas as pd
 import numpy as np
 import cx_Oracle
 
-from factor_3_mid_삼전o_시총제한o_동일가중_adoutlier2 import factor_3_mid_adoutlier2
+from factor3_midmom_삼전시총_동일가중_adout2_일별 import factor_3_mid_adoutlier
 
-from return_calculator import return_calculator
+from result_calculator import result_calculator
+
 
 #이거 두개 반드시 선언!
 cx0=cx_Oracle.makedsn("localhost",1521,"xe")
 connection = cx_Oracle.connect("lshlsh135","2tkdgns2",cx0) #이게 실행이 안될때가 있는데
 #그때는 services에 들어가서 oracle listner를 실행시켜줘야함
 
-
+kospi_day = pd.read_sql("""select * from kospi_day_prc""",con=connection) # 코스피 일별 종가
+kospi_day.set_index('TRD_DATE',inplace=True)
 kospi_quarter = pd.read_sql("""select * from kospi_quarter_return""",con=connection)
 kospi_month = pd.read_sql("""select * from kospi_month_return""",con=connection)
 #DATA를 가져온다!!
@@ -34,6 +41,14 @@ rebalancing_date = pd.read_sql("""select * from rebalancing_date""",con=connecti
 month_date = pd.read_sql("""select * from month_date""",con=connection)
 wics_mid = pd.read_sql("""select * from wics_mid""",con=connection)
 
+
+#kospi_daily_return = pd.read_sql("""select * from kospi_daily_stock """,con=connection)
+#kosdaq_daily_return = pd.read_sql("""select * from kosdaq_daily_stock """,con=connection)
+daily_return = pd.concat([pd.read_sql("""select * from kospi_daily_stock """,con=connection),pd.read_sql("""select * from kosdaq_daily_stock """,con=connection)],axis=0,ignore_index=True).drop_duplicates()
+
+#daily_date=pd.DataFrame(daily_return.groupby('TRD_DATE').count().reset_index()['TRD_DATE'])
+#wealth = pd.DataFrame(np.zeros(shape = (daily_date.shape[0], daily_date.shape[1])),index = daily_date['TRD_DATE'], columns = ['RTN_D_CUM'])
+#turnover_day = pd.DataFrame(np.zeros(shape = (daily_date.shape[0], daily_date.shape[1])),index = daily_date['TRD_DATE'])
 raw_data = pd.concat([kospi,kosdaq],axis=0,ignore_index=True).drop_duplicates()   #왜인지 모르겠는데 db에 중복된 정보가 들어가있네 ..? 
 col_length = len(rebalancing_date)-1 #rebalancing_date의 길이는 66이다. range로 이렇게 하면 0부터 65까지 66개의 i 가 만들어진다. -1을 해준건 실제 수익률은 -1개가 생성되기 때문.
 
@@ -53,21 +68,32 @@ raw_data['size_FIF_wisefn'] = raw_data['JISU_STOCK']*raw_data['FIF_RATIO']*raw_d
 
 first_column = len(raw_data.columns)  # 1/pbr 의 loc
 raw_data['EBIT_YOY'] = raw_data['OPER_PROFIT_YOY']
+#raw_data['EBIT_YOY_2yav'] =  (raw_data['EBIT_YOY'] + raw_data.groupby('GICODE')['EBIT_YOY'].shift(3))/2
 raw_data['1/EV_EBIT_TTM'] = 1/raw_data['EV_EBIT_TTM'] # EV/EBIT은 작을수록 좋은거기 때문에 역수
+#raw_data['1/EV_EBIT_TTM_2yav'] =  (raw_data['1/EV_EBIT_TTM'] + raw_data.groupby('GICODE')['1/EV_EBIT_TTM'].shift(3))/2
 raw_data['1/EV_EBITDA_TTM'] = 1/raw_data['EV_EBITDA_TTM']
-raw_data['gp/a'] = raw_data['GROSS_PROFIT'] / raw_data['ASSET']   
+#raw_data['1/EV_EBITDA_TTM_2yav'] =  (raw_data['1/EV_EBITDA_TTM'] + raw_data.groupby('GICODE')['1/EV_EBITDA_TTM'].shift(3))/2
+#raw_data['gp/a'] = raw_data['GROSS_PROFIT'] / raw_data['ASSET']    # gross profit을 ttm으로..
 raw_data['profit_margin_ratio'] = raw_data['NI'] / raw_data['SALES_TTM']
 raw_data['asset_turnover'] = raw_data['SALES_TTM'] / raw_data['ASSET'] 
 raw_data['1/pbr']=raw_data['EQUITY']/raw_data['MARKET_CAP']
+#raw_data['1/pbr_2yav'] =  (raw_data['1/pbr'] + raw_data.groupby('GICODE')['1/pbr'].shift(3))/2
 raw_data['1/per']=raw_data['ADJ_NI_12M_FWD']/raw_data['MARKET_CAP']
+#raw_data['1/per_2yav'] =  (raw_data['1/per'] + raw_data.groupby('GICODE')['1/per'].shift(3))/2
 raw_data['div_yield']=raw_data['CASH_DIV_COM']/raw_data['MARKET_CAP']
+#raw_data['div_yield_2yav'] =  (raw_data['div_yield'] + raw_data.groupby('GICODE')['div_yield'].shift(3))/2
 raw_data['roe']=raw_data['NI']/raw_data['EQUITY']
+#raw_data['roe_2yav'] =  (raw_data['roe'] + raw_data.groupby('GICODE')['roe'].shift(3))/2
 raw_data['roa']=raw_data['NI']/raw_data['ASSET']
-raw_data['sales_cap']=raw_data['SALES']/raw_data['MARKET_CAP']
-raw_data['gpro_cap']=raw_data['GROSS_PROFIT']/raw_data['MARKET_CAP']
-raw_data['opro_cap']=raw_data['OPE_PROFIT']/raw_data['MARKET_CAP'] # 이놈 시총제한 있고 없고 차이 심한데 
+#raw_data['roa_2yav'] =  (raw_data['roa'] + raw_data.groupby('GICODE')['roa'].shift(3))/2
 raw_data['sales_cap_ttm']=raw_data['SALES_TTM']/raw_data['MARKET_CAP']
+#raw_data['sales_cap_ttm_2yav'] =  (raw_data['sales_cap_ttm'] + raw_data.groupby('GICODE')['sales_cap_ttm'].shift(3))/2
 raw_data['opro_cap_ttm']=raw_data['OPE_PROFIT_TTM']/raw_data['MARKET_CAP']
+#raw_data['opro_cap_ttm_2yav'] =  (raw_data['opro_cap_ttm'] + raw_data.groupby('GICODE')['opro_cap_ttm'].shift(3))/2
+raw_data['sales_ttm/a']=raw_data['SALES_TTM']/raw_data['ASSET']
+#raw_data['sales_ttm/a_2yav'] =  (raw_data['sales_ttm/a'] + raw_data.groupby('GICODE')['sales_ttm/a'].shift(3))/2
+raw_data['opro_ttm/a']=raw_data['OPE_PROFIT_TTM']/raw_data['ASSET']
+#raw_data['opro_ttm/a_2yav'] =  (raw_data['opro_ttm/a'] + raw_data.groupby('GICODE')['opro_ttm/a'].shift(3))/2
 raw_data['1/trd_value']=raw_data['MARKET_CAP'] /raw_data['TRD_VALUE_60D_MEAN']
 raw_data['1/vol'] = 1/raw_data['STD_52WEEK']
 raw_data['1/beta'] = 1/raw_data['BEDA_52WEEK_D']
@@ -83,117 +109,21 @@ row_num = 0
 
 factors=raw_data.head().T.reset_index().loc[first_column:,'index'].reset_index(drop=True)
 
+#
+#i = '1/pbr'
+#j = '1/per'
+#z = 'div_yield'
 
-i = '1/pbr'
-j = '1/per'
-z = 'div_yield'
 
-
-for i in factors:
-    print(b.loc[:,i])
-for i in factors:
+for i in factor:
     for j in factors:
         for z in factors:
-            if i!=j!=z:
-                a=factor_3_mid_adoutlier2(raw_data,rebalancing_date,month_date,wics_mid,i,j,z)
-                locals()['aaa_{}{}{}'.format(i,j,z)] =a.factor_3_mid_adoutlier2()
-                locals()['ir_data_{}{}{}'.format(i,j,z)] = 2*(np.mean(locals()['aaa_{}{}{}'.format(i,j,z)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}'.format(i,j,z)][1]-kospi_quarter['RET'],axis=1)
-                b=return_calculator(locals()['aaa_{}{}{}'.format(i,j,z)][1],locals()['aaa_{}{}{}'.format(i,j,z)][2],kospi_quarter,kospi_month)
+            if factors[factors==i].index[0]<factors[factors==j].index[0]<factors[factors==z].index[0]:
+                a=factor_3_mid_adoutlier(50,raw_data,rebalancing_date,month_date,wics_mid,daily_return,i,j,z)
+                locals()['aaa_{}{}{}'.format(i,j,z)] =a.factor_3_mid_adoutlier()
+                b=result_calculator(locals()['aaa_{}{}{}'.format(i,j,z)][0],kospi_day)
                 b.rolling_12month_return_3factor(i,j,z)
-                
-#factor 3개 랜덤하게 골라서 성과 측정 _ 섹터 z_score
-for i in range(32,34):
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            if i<j<z:
-                a=factor_3_mid_섹터z_score(raw_data,rebalancing_date,month_date,wics_mid,i,j,z)
-                locals()['aaa_{}{}{}'.format(i,j,z)] =a.factor_3_mid_섹터z_score()
-                locals()['ir_data_{}{}{}'.format(i,j,z)] = 2*(np.mean(locals()['aaa_{}{}{}'.format(i,j,z)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}'.format(i,j,z)][1]-kospi_quarter['RET'],axis=1)
-                b=return_calculator(locals()['aaa_{}{}{}'.format(i,j,z)][1],locals()['aaa_{}{}{}'.format(i,j,z)][2],kospi_quarter,kospi_month)
-                b.rolling_12month_return_3factor(i,j,z)
-
-#factor 4개 랜덤하게 골라서 성과 측정
-for i in range(32,34):  #per나 pbr은 꼭 들어가야해..
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            for p in range(first_column,final_column+1):
-                if i<j<z<p:
-                    a=factor_4_mid(raw_data,rebalancing_date,month_date,wics_mid,i,j,z,p)
-                    locals()['aaa_{}{}{}{}'.format(i,j,z,p)] =a.factor_4_mid()
-                    locals()['ir_data_{}{}{}{}'.format(i,j,z,p)] = 2*(np.mean(locals()['aaa_{}{}{}{}'.format(i,j,z,p)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}{}'.format(i,j,z,p)][1]-kospi_quarter['RET'],axis=1)
-                    b=return_calculator(locals()['aaa_{}{}{}{}'.format(i,j,z,p)][1],locals()['aaa_{}{}{}{}'.format(i,j,z,p)][2],kospi_quarter,kospi_month)
-                    b.rolling_12month_return_4factor(i,j,z,p)
-
-#factor 4 에서  그래프 그리기 쉽도록 월별 수익률만 남길때..
-for i in range(32,34):  #per나 pbr은 꼭 들어가야해..
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            if i<j<z:
-                locals()['aaa_{}{}{}'.format(i,j,z)] =locals()['aaa_{}{}{}'.format(i,j,z)][1]
-
-
-
-
-
-#factor 5개 랜덤하게 골라서 성과 측정
-for i in range(32,34):  #per나 pbr은 꼭 들어가야해..
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            for p in range(first_column,final_column+1):
-                for k in range(first_column,final_column+1):
-                    if i<j<z<p<k:
-                        a=factor_5_mid(raw_data,rebalancing_date,month_date,wics_mid,i,j,z,p,k)
-                        locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)] =a.factor_5_mid()
-                        locals()['ir_data_{}{}{}{}{}'.format(i,j,z,p,k)] = 2*(np.mean(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1]-kospi_quarter['RET'],axis=1)
-                        b=return_calculator(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][2],kospi_quarter,kospi_month)
-                        b.rolling_12month_return_5factor(i,j,z,p,k)
-                        
-
-#factor 5개 랜덤하게 골라서 성과 측정 _ PER 음수 제외
-for i in range(32,34):  #per나 pbr은 꼭 들어가야해..
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            for p in range(first_column,final_column+1):
-                for k in range(first_column,final_column+1):
-                    if i<j<z<p<k:
-                        a=factor_5_mid_adper(raw_data,rebalancing_date,month_date,wics_mid,i,j,z,p,k)
-                        locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)] =a.factor_5_mid_adper()
-                        locals()['ir_data_{}{}{}{}{}'.format(i,j,z,p,k)] = 2*(np.mean(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1]-kospi_quarter['RET'],axis=1)
-                        b=return_calculator(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][2],kospi_quarter,kospi_month)
-                        b.rolling_12month_return_5factor(i,j,z,p,k)
-                        
-#factor 5개 랜덤하게 골라서 성과 측정 _ 이상치 스무딩 _ 아직 안돌렸음;
-for i in range(32,34):  #per나 pbr은 꼭 들어가야해..
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            for p in range(first_column,final_column+1):
-                for k in range(first_column,final_column+1):
-                    if i<j<z<p<k:
-                        a=factor_5_mid_adoutlier(raw_data,rebalancing_date,month_date,wics_mid,i,j,z,p,k)
-                        locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)] =a.factor_5_mid_adoutlier()
-                        locals()['ir_data_{}{}{}{}{}'.format(i,j,z,p,k)] = 2*(np.mean(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1]-kospi_quarter['RET'],axis=1)
-                        b=return_calculator(locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][1],locals()['aaa_{}{}{}{}{}'.format(i,j,z,p,k)][2],kospi_quarter,kospi_month)
-                        b.rolling_12month_return_5factor(i,j,z,p,k)
-
-#factor 3개 랜덤하게 골라서 대형주25, 중소코스피 75종목 고름
-for i in range(first_column,final_column+1):
-    for j in range(first_column,final_column+1):
-        for z in range(first_column,final_column+1):
-            if i<j<z:
-                a=factor_3_mid_대_중소코(raw_data,rebalancing_date,month_date,wics_mid,i,j,z)
-                locals()['aaa_{}{}{}'.format(i,j,z)] =a.factor_3_mid_대_중소코()
-                locals()['ir_data_{}{}{}'.format(i,j,z)] = 2*(np.mean(locals()['aaa_{}{}{}'.format(i,j,z)][1],axis=1)-np.mean(kospi_quarter['RET']))/np.std(locals()['aaa_{}{}{}'.format(i,j,z)][1]-kospi_quarter['RET'],axis=1)
-
-
-
-
-
-import itertools       
-a=list(itertools.combinations(range(first_column,final_column+1), 2))
-
-
-
-    
+        
     
     
     
